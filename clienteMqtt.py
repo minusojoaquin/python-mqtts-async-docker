@@ -5,43 +5,56 @@ import ssl
 import signal
 import aiomqtt
 
+# Configuración obligatoria: %(taskName)s requiere Python 3.12
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(taskName)s - %(levelname)s: %(message)s',
-    datefmt='%d/%m/%Y %H:%M:%S'
+    datefmt='%H:%M:%S'
 )
 
 class MqttApp:
     def __init__(self):
         self.broker = os.environ['SERVIDOR']
-        self.sub_topic_1 = os.environ['TOPICO_SUB_1']
-        self.sub_topic_2 = os.environ['TOPICO_SUB_2']
-        self.pub_topic = os.environ['TOPICO_PUB']
+        self.sub_1 = os.environ['TOPICO_SUB_1']
+        self.sub_2 = os.environ['TOPICO_SUB_2']
+        self.pub = os.environ['TOPICO_PUB']
         self.counter = 0
+        
+        # MQTTS: Puerto 8883 con TLS
         self.tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         self.tls_context.load_default_certs()
+        # Nota: Si el certificado del servidor es auto-firmado, 
+        # podrías necesitar: self.tls_context.check_hostname = False
 
-    async def increment_counter(self):
+    async def increment_task(self):
+        """Incrementa el contador cada 3 segundos."""
         while True:
             await asyncio.sleep(3)
             self.counter += 1
 
-    async def publish_status(self, client):
+    async def publish_task(self, client):
+        """Publica el estado cada 5 segundos."""
         while True:
             await asyncio.sleep(5)
-            payload = f"Contador actual: {self.counter}"
-            await client.publish(self.pub_topic, payload=payload)
-            logging.info(f"Publicado en {self.pub_topic}: {payload}")
+            await client.publish(self.pub, payload=f"Contador: {self.counter}")
+            logging.info(f"Publicación enviada a {self.pub}")
 
-    async def listener(self, client):
-        await client.subscribe(self.sub_topic_1)
-        await client.subscribe(self.sub_topic_2)
-        # aiomqtt 2.x: client.messages es un iterador, no una función
+    async def sub_1_handler(self, payload):
+        logging.info(f"Corrutina T1 procesando: {payload}")
+
+    async def sub_2_handler(self, payload):
+        logging.info(f"Corrutina T2 procesando: {payload}")
+
+    async def listen_task(self, client):
+        """Maneja suscripciones y deriva a corrutinas correspondientes."""
+        await client.subscribe(self.sub_1)
+        await client.subscribe(self.sub_2)
         async for message in client.messages:
-            if message.topic.matches(self.sub_topic_1):
-                logging.info(f"Recibido T1: {message.payload.decode()}")
-            elif message.topic.matches(self.sub_topic_2):
-                logging.info(f"Recibido T2: {message.payload.decode()}")
+            payload = message.payload.decode()
+            if message.topic.matches(self.sub_1):
+                await self.sub_1_handler(payload)
+            elif message.topic.matches(self.sub_2):
+                await self.sub_2_handler(payload)
 
     async def run(self):
         try:
@@ -50,34 +63,27 @@ class MqttApp:
                 port=8883,
                 tls_context=self.tls_context
             ) as client:
+                # Creación de tareas con nombre para el logging
                 await asyncio.gather(
-                    asyncio.create_task(self.increment_counter(), name="Task-Incremento"),
-                    asyncio.create_task(self.publish_status(client), name="Task-Publicador"),
-                    asyncio.create_task(self.listener(client), name="Task-Suscripcion")
+                    asyncio.create_task(self.increment_task(), name="Task-Incremento"),
+                    asyncio.create_task(self.publish_task(client), name="Task-Publicacion"),
+                    asyncio.create_task(self.listen_task(client), name="Task-Suscripcion")
                 )
         except asyncio.CancelledError:
             pass
 
-async def main():
-    app = MqttApp()
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    for s in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(s, stop_event.set)
-
-    run_task = asyncio.create_task(app.run())
-    await stop_event.wait()
-    
-    run_task.cancel()
-    try:
-        await run_task
-    except asyncio.CancelledError:
-        pass
-    print("mqtt final")
-
 if __name__ == "__main__":
+    app = MqttApp()
+    loop = asyncio.new_event_loop()
+    
+    # Captura de señales para cierre limpio
+    for s in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(s, loop.stop)
+
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
+        loop.run_until_complete(app.run())
+    except Exception:
         pass
+    finally:
+        print("mqtt final")
+        loop.close()

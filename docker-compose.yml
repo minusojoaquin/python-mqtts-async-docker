@@ -3,7 +3,7 @@ services:
     build: .
     container_name: minuso_joaquin_mqtt_container
     environment:
-      - SERVIDOR=broker.hivemq.com
+      - SERVIDOR=fiounam.duckdns.org
       - TOPICO_SUB_1=ingenieria/datos/1
       - TOPICO_SUB_2=ingenieria/datos/2
       - TOPICO_PUB=ingenieria/minuso/estado
