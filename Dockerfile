@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Configuración de zona horaria para Misiones, Argentina
 ENV TZ="America/Argentina/Buenos_Aires"
 
 COPY ./requirements.txt /app/requirements.txt

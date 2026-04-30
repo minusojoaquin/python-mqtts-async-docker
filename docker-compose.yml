@@ -1,10 +1,7 @@
 services:
-  minuso_joaquin_mqtt_async:
+  mqtt_service:
     build: .
-    container_name: minuso_joaquin_mqtt_container
-    environment:
-      - SERVIDOR=fiounam.duckdns.org
-      - TOPICO_SUB_1=ingenieria/datos/1
-      - TOPICO_SUB_2=ingenieria/datos/2
-      - TOPICO_PUB=ingenieria/minuso/estado
+    container_name: mqtt_minuso_container
+    env_file:
+      - .env
     restart: always
